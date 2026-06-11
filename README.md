@@ -5,7 +5,7 @@
 A black hole floating inside your [Ghostty](https://ghostty.org) terminal —
 and a pomodoro break reminder in disguise. It starts small, grows as the
 hour progresses, and demands a break by swallowing ever more of your screen.
-Take the break and it leaves you alone.
+Take the break and it settles back into a small dormant reminder.
 
 Inspired by [Eric Bruneton's black hole shader](https://ebruneton.github.io/black_hole_shader/),
 which beam-traces Schwarzschild geodesics against precomputed lookup tables.
@@ -50,8 +50,8 @@ Instead the schedule is anchored to the wall clock via `iDate`:
   predictable rhythm.
 - **Typing detector**: `iTimeCursorChange` tracks cursor activity in your
   terminal. Stop using it for `IDLE_FADE_SEC` (default 90 s) and the hole
-  shrinks live, gone entirely after a few minutes of quiet — it never nags
-  while you aren't actually working.
+  settles live into a low-presence dormant state — it never nags while you
+  aren't actually working.
 
 The trade-off of self-containment: the cycle won't re-anchor to a break you
 take at an odd time — it's an hourly bell, not a per-streak stopwatch.
@@ -64,7 +64,7 @@ Clone the repo, then add to your Ghostty config (`~/.config/ghostty/config`
 or `~/Library/Application Support/com.mitchellh.ghostty/config` on macOS):
 
 ```ini
-custom-shader = /path/to/blackhole_ghostty/blackhole.glsl
+custom-shader = /absolute/path/to/ghostty-blackhole/blackhole.glsl
 custom-shader-animation = true
 ```
 
@@ -85,7 +85,9 @@ Constants at the top of `blackhole.glsl`:
 | `DILATION_MIN`    | Disk's orbital time rate when the hole is fully grown (lower = more slowdown) |
 | `WORK_PERIOD_MIN` | Work minutes per pomodoro cycle (growth phase)          |
 | `BREAK_MIN`       | Break minutes per cycle (hole stays small)              |
-| `IDLE_FADE_SEC`   | Typing pause after which the hole starts to fade        |
+| `IDLE_FADE_SEC`   | Typing pause after which the hole starts to settle down |
+| `REST_INTENSITY_MIN` | Minimum dormant strength for idle/break windows      |
+| `REST_VIS_MIN`    | Minimum dormant visibility for ring/glow readability    |
 | `TIME_SCALE`      | Testing only: `1` = real schedule; `>1` fast-forwards growth via `iTime` |
 
 Edit and reload (`cmd+shift+,`), or use the bundled `tune.py` for

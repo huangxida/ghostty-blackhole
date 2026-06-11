@@ -16,7 +16,7 @@
 //     circular "lensed image" of the disk's far side
 //
 // Ghostty setup (~/.config/ghostty/config):
-//   custom-shader = /path/to/blackhole_ghostty/blackhole.glsl
+//   custom-shader = /absolute/path/to/ghostty-blackhole/blackhole.glsl
 //   custom-shader-animation = true
 
 // ---------------------------------------------------------------- tunables --
@@ -31,13 +31,15 @@ const float DILATION_MIN  = 0.1000; // animation time rate when the hole is full
 // ------------------------------------------------------ pomodoro, self-contained --
 // Shaders have no memory between frames, so the schedule is anchored to the
 // wall clock (iDate.w): the hole grows over each WORK_PERIOD_MIN, collapses
-// as break time arrives, and stays gone for BREAK_MIN. With 55+5 the break
-// is the last five minutes of every hour. Independently, iTimeCursorChange
-// acts as a live typing detector: stop using the terminal and the hole
-// shrinks away; it never shows while you are not actually working.
+// as break time arrives, and stays small/dormant for BREAK_MIN. With 55+5
+// the break is the last five minutes of every hour. Independently,
+// iTimeCursorChange acts as a live typing detector: stop using the terminal
+// and the hole settles into a low-presence dormant state.
 const float WORK_PERIOD_MIN = 55.0000; // work minutes per cycle (growth phase)
-const float BREAK_MIN       = 5.0000; // break minutes per cycle (hole gone)
+const float BREAK_MIN       = 5.0000; // break minutes per cycle (hole dormant)
 const float IDLE_FADE_SEC   = 90.0000; // typing pause at which fading starts
+const float REST_INTENSITY_MIN = 0.0800; // dormant strength floor for idle/break windows
+const float REST_VIS_MIN       = 0.1800; // dormant visibility floor for ring/glow readability
 const float TIME_SCALE      = 1.0000; // TESTING: 1 = real wall-clock schedule; >1 fast-forwards growth via iTime (100 -> a full cycle in ~36 s). Set back to 1 for normal use.
 
 // ------------------------------------------------------------------- noise --
@@ -87,36 +89,39 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     // ---- pomodoro state, computed live from Ghostty uniforms ----
     // wall-clock cycle: grow through the work phase, collapse fast in the
-    // last minute, stay gone through the break phase
-    float workSec  = WORK_PERIOD_MIN * 60.0;
-    float cycleSec = workSec + BREAK_MIN * 60.0;
+    // last minute, stay dormant through the break phase
+    float timeScale = max(TIME_SCALE, 0.001);
+    float workSec   = max(WORK_PERIOD_MIN * 60.0, 1.0);
+    float breakSec  = max(BREAK_MIN * 60.0, 0.0);
+    float cycleSec  = max(workSec + breakSec, 1.0);
     // schedule rides the wall clock; for testing, TIME_SCALE adds extra
     // progress via iTime (which always advances per frame), so e.g. 100 runs
     // a full cycle in seconds without depending on how Ghostty steps iDate.w
-    float wall     = iDate.w + iTime * (TIME_SCALE - 1.0);
-    float phase    = mod(wall, cycleSec);
-    float collapse = min(60.0, workSec * 0.15);  // scales down for short debug cycles
+    float wall      = iDate.w + iTime * (timeScale - 1.0);
+    float phase     = mod(wall, cycleSec);
+    float collapse  = min(min(60.0, workSec * 0.15), workSec - 0.001);
     float grow = clamp(phase / workSec, 0.0, 1.0)
                * (1.0 - smoothstep(workSec - collapse, workSec, phase));
     // always-present floor: never gone while you work — small and slow at
     // cycle start, back to small when the break window arrives
-    float I = mix(0.12, 1.0, grow);
-    // typing detector: cursor quiet -> you're pausing; the hole shrinks live
-    // and is gone by the time the pause becomes a real break
+    float restI = clamp(REST_INTENSITY_MIN, 0.0, 1.0);
+    float restVis = clamp(REST_VIS_MIN, 0.0, 1.0);
+    float I = mix(restI, 1.0, grow);
+    // typing detector: cursor quiet -> you're pausing; the hole enters a dormant state
     float idle = max(0.0, iTime - iTimeCursorChange);
-    I *= 1.0 - smoothstep(IDLE_FADE_SEC, max(BREAK_MIN * 60.0, IDLE_FADE_SEC + 1.0), idle);
-    float vis = smoothstep(0.0, 0.10, I);  // hole vanishes entirely when rested
-    if (vis <= 0.0) {
-        fragColor = texture(iChannel0, uv);
-        return;
-    }
+    float idleStart = max(IDLE_FADE_SEC, 0.0);
+    float idleFade = smoothstep(idleStart, idleStart + max(breakSec, 1.0), idle);
+    I *= mix(1.0, restI, idleFade);
+    I = max(I, restI);
+    float vis = max(restVis, smoothstep(0.0, 0.10, I));
     float sz     = mix(0.22, 1.0, I);      // starts small, grows toward break time
-    float rh     = HOLE_RADIUS * sz;
-    float thetaE = LENS_STRENGTH * sz;
+    float radius = max(HOLE_RADIUS, 0.001);
+    float rh     = radius * sz;
+    float thetaE = max(LENS_STRENGTH, 0.0) * sz;
 
     // smooth animation runs off iTime (advances every frame); the wall clock
     // above only drives the slow pomodoro envelope
-    float t = iTime * DRIFT_SPEED;
+    float t = iTime * max(DRIFT_SPEED, 0.0);
 
     // ---- gravitational time dilation ----
     // A heavier hole slows the clock locally: the accretion disk visibly winds
@@ -124,13 +129,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // from 1 toward DILATION_MIN as the hole reaches full mass. (Applied to the
     // disk swirl below, not to the drift — scaling the drift frequency by a
     // slowly-varying mass over an unbounded iTime would eventually stall it.)
-    float dil = mix(1.0, DILATION_MIN, I);
+    float dil = mix(1.0, clamp(DILATION_MIN, 0.0, 1.0), I);
 
     // lazy Lissajous drift, vertically confined so the hole and its disk
     // stay above the work area at the bottom of the screen; bounds adapt to
     // the current size (disk half-extent ~2.4*rh after the tilt rotation)
+    float workArea = clamp(WORK_AREA, 0.0, 0.9);
     float ext = 2.4 * rh;
-    float yLo = WORK_AREA + 0.12 + ext;      // clears shield band + wobble
+    float yLo = workArea + 0.12 + ext;       // clears shield band + wobble
     float yHi = max(yLo, 0.90 - ext);        // clears the screen top
     // drift follows size: a small calm hole hovers near its spot, a big one
     // roams wide and fast (amplitude scaling, not frequency — intensity
@@ -155,7 +161,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float defl   = (thetaE * thetaE / max(r, 1e-4)) * exp(-r * r * 4.0);
     // fade the warp field itself to zero toward the work area — a continuous
     // displacement leaves no visible seam, unlike blending warped/unwarped colors
-    defl *= vis * smoothstep(WORK_AREA, WORK_AREA + 0.18, yUp);
+    defl *= vis * smoothstep(workArea, workArea + 0.18, yUp);
     vec2  dir    = p / max(r, 1e-5);
     vec3  term;
     // mild chromatic aberration: blue bends a touch more than red
@@ -203,7 +209,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         float front = smoothstep(-0.004, 0.004, pd.y);
         float occl  = mix(shadow, 1.0, front);
 
-        col += diskPalette(heat) * (DISK_GAIN * band * streaks * emit * gain * occl) * vis;
+        col += diskPalette(heat) * (max(DISK_GAIN, 0.0) * band * streaks * emit * gain * occl) * vis;
     }
 
     // ---- lensed image of the disk's far side: a faint circular halo ----
