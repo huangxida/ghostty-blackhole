@@ -8,9 +8,12 @@ struct ShaderParam: Identifiable, Equatable {
 }
 
 /// Owns the shader file: parses the tunable block, writes nudged values back
-/// (only the touched lines, atomically — claude-token.py rewrites TOKEN_LEVEL
-/// in the same file live), hot-reloads Ghostty via SIGUSR2, and watches the
-/// file so external edits show up in the UI.
+/// (only the touched lines, atomically), hot-reloads Ghostty via SIGUSR2, and
+/// watches the file so external edits show up in the UI. TOKEN_LEVEL is the
+/// exception: the shader takes the live fill from the cursor color and only
+/// falls back to the #define when there's no signal, so the slider emits the
+/// OSC 12 encoding (same as claude-token.py) onto every Ghostty surface's tty
+/// instead of touching the file.
 final class ShaderStore: ObservableObject {
     @Published private(set) var params: [ShaderParam] = []
     @Published var status = "no shader loaded"
@@ -19,11 +22,12 @@ final class ShaderStore: ObservableObject {
     private var pending: [String: Double] = [:]
     private var lastTouched: [String: Date] = [:]
     private var flushTimer: Timer?
+    private var tokenTimer: Timer?
     private var rescanTimer: Timer?
     private var watcher: DispatchSourceFileSystemObject?
 
     // const float NAME = 1.2345; // comment        (the tunable block)
-    // #define TOKEN_LEVEL 0.1234 // token-level    (owned by claude-token.py)
+    // #define TOKEN_LEVEL 0.1234 // token-level    (no-signal fallback; parsed for display, never written)
     private static let constRe = try! NSRegularExpression(
         pattern: #"^(const float\s+)(\w+)(\s*=\s*)(-?\d+\.\d+)(\s*;.*)$"#,
         options: [.anchorsMatchLines])
@@ -108,6 +112,13 @@ final class ShaderStore: ObservableObject {
         guard let i = params.firstIndex(where: { $0.name == name }) else { return }
         guard params[i].value != value else { return }
         params[i].value = value
+        if name == "TOKEN_LEVEL" {
+            tokenTimer?.invalidate()
+            tokenTimer = Timer.scheduledTimer(withTimeInterval: 0.09, repeats: false) { [weak self] _ in
+                self?.emitTokenLevel(value)
+            }
+            return
+        }
         pending[name] = value
         lastTouched[name] = Date()
         flushTimer?.invalidate()
@@ -133,8 +144,8 @@ final class ShaderStore: ObservableObject {
         let values = pending
         pending = [:]
         do {
-            // re-read fresh and substitute by name: claude-token.py rewrites
-            // TOKEN_LEVEL live, and writing a stale snapshot would clobber it
+            // re-read fresh and substitute by name, so a concurrent external
+            // edit (git, hand edits) is never clobbered by a stale snapshot
             var text = try String(contentsOf: url, encoding: .utf8)
             for re in [Self.constRe, Self.defineRe] {
                 let whole = NSRange(text.startIndex..., in: text)
@@ -163,31 +174,95 @@ final class ShaderStore: ObservableObject {
         }
     }
 
+    // MARK: - token level preview (OSC 12)
+
+    /// Preview a context fill the way claude-token.py reports a real one:
+    /// encode the level into the low nibbles of the amber cursor color (high
+    /// nibbles #F_B_0_, 4-bit checksum — keep in sync with CURSOR_BASE there
+    /// and TOKEN_BASE_HI in blackhole.glsl) and write the OSC 12 sequence to
+    /// every Ghostty surface's tty. A negative level emits OSC 112, resetting
+    /// the cursor color — the shader reads that as "no session", hole hidden.
+    /// Note: a surface with a live Claude session re-emits its own level on
+    /// every statusline refresh, so the preview only sticks elsewhere.
+    private func emitTokenLevel(_ level: Double) {
+        let seq: String
+        if level < 0 {
+            seq = "\u{1B}]112\u{07}"
+        } else {
+            let fill = max(0, min(250, Int((level * 250).rounded())))
+            let hi = fill >> 4, lo = fill & 0xF
+            seq = String(format: "\u{1B}]12;#%02x%02x%02x\u{07}",
+                         0xF0 | (hi ^ lo ^ 0x5), 0xB0 | hi, lo)
+        }
+        let data = Array(seq.utf8)
+        var sent = 0
+        for tty in ghosttyTTYs() {
+            let fd = Darwin.open(tty, O_WRONLY | O_NONBLOCK)
+            guard fd >= 0 else { continue }
+            if Darwin.write(fd, data, data.count) == data.count { sent += 1 }
+            close(fd)
+        }
+        status = sent == 0
+            ? "no Ghostty surfaces found"
+            : level < 0
+                ? "cursor signal cleared on \(sent) surface(s) — hole hidden"
+                : String(format: "token level %.0f%% → %d surface(s)", level * 100, sent)
+    }
+
+    /// Ttys of all Ghostty surfaces: each surface's shell is a direct child
+    /// of a ghostty process and sits on that surface's pty.
+    private func ghosttyTTYs() -> [String] {
+        let ghostty = ghosttyPIDs()
+        guard !ghostty.isEmpty else { return [] }
+        var ttys: Set<String> = []
+        for line in runPS(["-axo", "ppid=,tty="]).split(separator: "\n") {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard parts.count == 2,
+                  let ppid = pid_t(parts[0]),
+                  ghostty.contains(ppid),
+                  parts[1] != "??"
+            else { continue }
+            ttys.insert("/dev/" + parts[1])
+        }
+        return ttys.sorted()
+    }
+
     // MARK: - Ghostty reload
 
     /// Ghostty (>= 1.2) reloads its config — including custom shaders — on
-    /// SIGUSR2. PIDs come from ps, not pgrep: pgrep silently excludes its own
-    /// ancestors, which bites when a tool runs inside Ghostty itself.
+    /// SIGUSR2.
     @discardableResult
     func reloadGhostty() -> Bool {
-        let ps = Process()
-        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-        ps.arguments = ["-axco", "pid,comm"]
-        let pipe = Pipe()
-        ps.standardOutput = pipe
-        do { try ps.run() } catch { return false }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        ps.waitUntilExit()
         var ok = false
-        for line in String(data: data, encoding: .utf8)?.split(separator: "\n") ?? [] {
+        for pid in ghosttyPIDs() where kill(pid, SIGUSR2) == 0 { ok = true }
+        return ok
+    }
+
+    /// PIDs come from ps, not pgrep: pgrep silently excludes its own
+    /// ancestors, which bites when a tool runs inside Ghostty itself.
+    private func ghosttyPIDs() -> Set<pid_t> {
+        var pids: Set<pid_t> = []
+        for line in runPS(["-axco", "pid,comm"]).split(separator: "\n") {
             let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2,
                   parts[1].trimmingCharacters(in: .whitespaces) == "ghostty",
                   let pid = pid_t(parts[0].trimmingCharacters(in: .whitespaces))
             else { continue }
-            if kill(pid, SIGUSR2) == 0 { ok = true }
+            pids.insert(pid)
         }
-        return ok
+        return pids
+    }
+
+    private func runPS(_ args: [String]) -> String {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = args
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        do { try ps.run() } catch { return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        ps.waitUntilExit()
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     // MARK: - file watching
@@ -224,6 +299,9 @@ final class ShaderStore: ObservableObject {
             return
         }
         for fp in fresh {
+            // TOKEN_LEVEL's slider is the live cursor-color preview, not a
+            // mirror of the file's fallback define — leave it where it is
+            if fp.name == "TOKEN_LEVEL" { continue }
             // a param the user touched in the last moment wins over the disk
             if let t = lastTouched[fp.name], Date().timeIntervalSince(t) < 0.6 { continue }
             if pending[fp.name] != nil { continue }

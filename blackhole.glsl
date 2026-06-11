@@ -33,8 +33,8 @@
 
 // ---------------------------------------------------------------- tunables --
 // hole & lensing
-const float HOLE_RADIUS   = 0.0800; // size dial. Pomodoro: shadow radius at full size (fraction of screen height). Token mode: scales the area calibration, exact at 0.08.
-const float LENS_DEPTH    = 9.0086; // distance from hole to the terminal "sky" plane, in r_s — bigger = text bends harder
+const float HOLE_RADIUS   = 0.0200; // size dial. Pomodoro: shadow radius at full size (fraction of screen height). Token mode: scales the area calibration, exact at 0.08.
+const float LENS_DEPTH    = 13.0000; // distance from hole to the terminal "sky" plane, in r_s — bigger = text bends harder
 const float STAR_GAIN     = 0.0000; // lensed starfield brightness around the hole (0 = off)
 // accretion disk geometry (radii in Schwarzschild radii)
 const float DISK_INNER    = 1.8000; // inner edge; 3 r_s is the ISCO — the innermost stable orbit
@@ -56,14 +56,14 @@ const float DRIFT_SPEED   = 1.0000; // how fast the hole floats around
 const float WORK_AREA     = 0.3300; // bottom screen fraction kept undistorted
 const float DILATION_MIN  = 0.2000; // disk pattern time rate at full size (gravitational time dilation theme)
 // token mode
-const float TOKEN_AREA_MIN = 0.0006; // MODE_TOKENS: shadow area at 0% context, as a fraction of the terminal area
-const float TOKEN_AREA_MAX = 0.0313; // MODE_TOKENS: shadow area at 100% context. Looks bigger than it sounds: the bright disk reaches ~3x past the shadow radius, so 0.0313 already fills most of a screen height — and render cost scales with it.
-const float TOKEN_HOME_X  = 0.9400; // MODE_TOKENS: corner-home x in uv (1.0 = right edge)
-const float TOKEN_HOME_Y  = 0.0600; // MODE_TOKENS: corner-home y in uv (0.0 = screen top — Ghostty y runs top-down)
+const float TOKEN_AREA_MIN = 0.0100; // MODE_TOKENS: shadow area at 0% context, as a fraction of the terminal area
+const float TOKEN_AREA_MAX = 0.5000; // MODE_TOKENS: shadow area at 100% context. Looks bigger than it sounds: the bright disk reaches ~3x past the shadow radius, so 0.0313 already fills most of a screen height — and render cost scales with it.
+const float TOKEN_HOME_X  = 0.9600; // MODE_TOKENS: corner-home x in uv (1.0 = right edge)
+const float TOKEN_HOME_Y  = 0.2000; // MODE_TOKENS: corner-home y in uv (0.0 = screen top — Ghostty y runs top-down)
 const float TOKEN_EASE    = 1.0000; // MODE_TOKENS: growth curve exponent; 1 = proportional, <1 front-loads growth, >1 back-loads it
 const float TOKEN_REACH   = 1.0000; // MODE_TOKENS: fraction of the playable screen the roam box covers at 100% context
-const float TOKEN_CALM    = 0.0200; // MODE_TOKENS: drift speed at 0% context (near-still seed)
-const float TOKEN_RUSH    = 0.3500; // MODE_TOKENS: drift speed at 100% context (noticeably quicker, never frantic)
+const float TOKEN_CALM    = 0.0400; // MODE_TOKENS: drift speed at 0% context (near-still seed)
+const float TOKEN_RUSH    = 1.1000; // MODE_TOKENS: drift speed at 100% context (noticeably quicker, never frantic)
 
 // geodesic integration steps per pixel (only pixels near the hole pay this).
 // The dominant GPU cost: at high token fill the near field covers most of the
@@ -92,7 +92,7 @@ const float TOKEN_RUSH    = 0.3500; // MODE_TOKENS: drift speed at 100% context 
 // TOKEN_LEVEL is a manual fallback used only when the cursor carries no
 // signal — handy for hand-testing a size (edit + reload); the committed -1
 // keeps it inert. (#define, not const float, so the tuner leaves it alone.)
-#define TOKEN_LEVEL -1.0000 // token-level
+#define TOKEN_LEVEL -1 // token-level
 
 const ivec3 TOKEN_BASE_HI = ivec3(0xF, 0xB, 0x0); // cursor-channel base, high nibbles
 

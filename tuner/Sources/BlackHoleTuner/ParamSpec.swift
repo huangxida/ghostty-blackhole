@@ -51,7 +51,7 @@ enum Specs {
         "DILATION_MIN":  ParamSpec(0.0...1.0, "Motion & screen", 0.2, "Disk pattern time rate at full size — gravitational time dilation theme"),
 
         // token mode
-        "TOKEN_LEVEL":   ParamSpec(-1.0...1.0, "Token mode", -1.0, "Live context fill — owned by claude-token.py; move it here to preview any fill"),
+        "TOKEN_LEVEL":   ParamSpec(-1.0...1.0, "Token mode", -1.0, "Preview any context fill — emits the OSC 12 cursor-color signal to every Ghostty surface (claude-token.py's channel); negative clears the signal and hides the hole. A live Claude session re-emits its own level, overriding the preview in its surface"),
         "TOKEN_AREA_MIN": ParamSpec(0.001...0.10, "Token mode", 0.01, "Shadow area at 0% context, as a fraction of the terminal area"),
         "TOKEN_AREA_MAX": ParamSpec(0.05...0.90, "Token mode", 0.50, "Shadow area at 100% context, as a fraction of the terminal area"),
         "TOKEN_HOME_X":  ParamSpec(0.0...1.0, "Token mode", 0.94, "Corner-home x in uv (1 = right edge)"),
