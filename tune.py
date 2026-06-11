@@ -40,9 +40,7 @@ BOUNDS = {
     "DILATION_MIN": (0.0, 1.0),
     "WORK_PERIOD_MIN": (1.0 / 60.0, 24.0 * 60.0),
     "BREAK_MIN": (0.0, 24.0 * 60.0),
-    "IDLE_FADE_SEC": (0.0, 24.0 * 60.0 * 60.0),
     "REST_INTENSITY_MIN": (0.0, 1.0),
-    "REST_VIS_MIN": (0.0, 1.0),
     "TIME_SCALE": (0.001, 10000.0),
 }
 

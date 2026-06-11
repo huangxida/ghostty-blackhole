@@ -48,17 +48,15 @@ Instead the schedule is anchored to the wall clock via `iDate`:
   back to small in the last minute, and stays small through `BREAK_MIN`
   (default 5 min). With 55+5 the peak hits at five-to-the-hour — a fixed,
   predictable rhythm.
-- **Typing detector**: `iTimeCursorChange` tracks cursor activity in your
-  terminal. Stop using it for `IDLE_FADE_SEC` (default 90 s) and the hole
-  settles live into a low-presence dormant state — it never nags while you
-  aren't actually working.
+- **Idle-independent**: cursor activity does not affect the schedule or visuals;
+  the hole grows and rests only according to the wall-clock Pomodoro cycle.
 
 The trade-off of self-containment: the cycle won't re-anchor to a break you
 take at an odd time — it's an hourly bell, not a per-streak stopwatch.
 
 ## Install
 
-Requires Ghostty 1.3+ (for the cursor and clock shader uniforms).
+Requires Ghostty 1.3+ (for the clock and custom shader uniforms).
 
 Clone the repo, then add to your Ghostty config (`~/.config/ghostty/config`
 or `~/Library/Application Support/com.mitchellh.ghostty/config` on macOS):
@@ -85,9 +83,7 @@ Constants at the top of `blackhole.glsl`:
 | `DILATION_MIN`    | Disk's orbital time rate when the hole is fully grown (lower = more slowdown) |
 | `WORK_PERIOD_MIN` | Work minutes per pomodoro cycle (growth phase)          |
 | `BREAK_MIN`       | Break minutes per cycle (hole stays small)              |
-| `IDLE_FADE_SEC`   | Typing pause after which the hole starts to settle down |
-| `REST_INTENSITY_MIN` | Minimum dormant strength for idle/break windows      |
-| `REST_VIS_MIN`    | Minimum dormant visibility for ring/glow readability    |
+| `REST_INTENSITY_MIN` | Minimum dormant strength at cycle start and during break |
 | `TIME_SCALE`      | Testing only: `1` = real schedule; `>1` fast-forwards growth via `iTime` |
 
 Edit and reload (`cmd+shift+,`), or use the bundled `tune.py` for

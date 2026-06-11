@@ -32,14 +32,10 @@ const float DILATION_MIN  = 0.1000; // animation time rate when the hole is full
 // Shaders have no memory between frames, so the schedule is anchored to the
 // wall clock (iDate.w): the hole grows over each WORK_PERIOD_MIN, collapses
 // as break time arrives, and stays small/dormant for BREAK_MIN. With 55+5
-// the break is the last five minutes of every hour. Independently,
-// iTimeCursorChange acts as a live typing detector: stop using the terminal
-// and the hole settles into a low-presence dormant state.
+// the break is the last five minutes of every hour.
 const float WORK_PERIOD_MIN = 55.0000; // work minutes per cycle (growth phase)
 const float BREAK_MIN       = 5.0000; // break minutes per cycle (hole dormant)
-const float IDLE_FADE_SEC   = 90.0000; // typing pause at which fading starts
-const float REST_INTENSITY_MIN = 0.0800; // dormant strength floor for idle/break windows
-const float REST_VIS_MIN       = 0.1800; // dormant visibility floor for ring/glow readability
+const float REST_INTENSITY_MIN = 0.0800; // dormant strength floor for cycle start/break windows
 const float TIME_SCALE      = 1.0000; // TESTING: 1 = real wall-clock schedule; >1 fast-forwards growth via iTime (100 -> a full cycle in ~36 s). Set back to 1 for normal use.
 
 // ------------------------------------------------------------------- noise --
@@ -105,15 +101,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // always-present floor: never gone while you work — small and slow at
     // cycle start, back to small when the break window arrives
     float restI = clamp(REST_INTENSITY_MIN, 0.0, 1.0);
-    float restVis = clamp(REST_VIS_MIN, 0.0, 1.0);
     float I = mix(restI, 1.0, grow);
-    // typing detector: cursor quiet -> you're pausing; the hole enters a dormant state
-    float idle = max(0.0, iTime - iTimeCursorChange);
-    float idleStart = max(IDLE_FADE_SEC, 0.0);
-    float idleFade = smoothstep(idleStart, idleStart + max(breakSec, 1.0), idle);
-    I *= mix(1.0, restI, idleFade);
-    I = max(I, restI);
-    float vis = max(restVis, smoothstep(0.0, 0.10, I));
+    float vis = smoothstep(0.0, 0.10, I);
     float sz     = mix(0.22, 1.0, I);      // starts small, grows toward break time
     float radius = max(HOLE_RADIUS, 0.001);
     float rh     = radius * sz;
